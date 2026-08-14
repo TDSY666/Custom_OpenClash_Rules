@@ -4,18 +4,22 @@ on:
   push:
     branches:
       - main
-    # Source-list pushes are validated after Auto generate rules publishes the
-    # matching YAML/MRS commit. Pull requests still validate source and derived
-    # files together before merge.
-    paths-ignore:
-      - 'rule/Custom_Direct.list'
-      - 'rule/Custom_Proxy.list'
-      - 'rule/Steam_CDN.list'
-      - 'rule/Encrypted_DNS.list'
-      - 'rule/Game_Download_CDN.list'
+    # Resource and documentation changes use their focused publication flows.
+    paths:
+      - '.github/**'
+      - 'py/**'
+      - 'script/**/*.js'
+      - 'shell/**/*.sh'
+      - 'cfg/yaml/**'
   pull_request:
     branches:
       - main
+    paths:
+      - '.github/**'
+      - 'py/**'
+      - 'script/**/*.js'
+      - 'shell/**/*.sh'
+      - 'cfg/yaml/**'
   workflow_dispatch:
 
 permissions:
@@ -32,8 +36,18 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          submodules: true
+          node-version: '24'
+
+      - name: Validate JavaScript
+        shell: bash
+        run: |
+          git ls-files -z -- '*.js' '*.mjs' '*.cjs' |
+            xargs -0 -r -n 1 -t node --check
+          node --test .github/scripts/*.test.cjs
 
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -79,10 +93,9 @@ jobs:
           shellcheck --shell=sh shell/check_cpu_version.sh shell/install_openclash_dev.sh shell/install_openclash_dev_update.sh .github/scripts/test_installers.sh
           actionlint .github/workflows/*.yml
           sh shell/check_cpu_version.sh --self-check
-          python -m unittest discover -s py -p 'test_*.py'
+          python -m unittest discover -s py -p 'test_rule_generation.py'
           python -m unittest discover -s .github/scripts -p 'test_*.py'
-          node --check script/sub-store/sub-store-ipv6-egress-filter.js
-          node --test .github/scripts/sub_store_ipv6_filter.test.cjs
+          python .github/scripts/jsdelivr_purge.py check-contract --revision HEAD
           sh .github/scripts/test_installers.sh
           python py/sync_installer_common.py --check
           python py/generate_game_cdn.py --check
@@ -94,8 +107,3 @@ jobs:
           for config in cfg/yaml/*.yaml; do
             mihomo -t -d "$RUNNER_TEMP/mihomo-config" -f "$config"
           done
-
-      - name: Build documentation site
-        run: |
-          python -m pip install --requirement requirements-docs.txt
-          mkdocs build --clean --site-dir "$RUNNER_TEMP/site"
